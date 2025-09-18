@@ -1,68 +1,63 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from .. import models, auth
-from ..database import SessionLocal
+from fastapi import APIRouter, HTTPException
 
-router = APIRouter(prefix="/api/sweets", tags=["sweets"])
+router = APIRouter()
 
-# Dependency
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# In-memory database (temporary for TDD)
+sweets_db = []
+counter = 1  # for unique IDs
+
+
+# Add sweet
+@router.post("/sweets")
+def add_sweet(name: str, category: str, price: int, quantity: int):
+    global counter
+    sweet = {
+        "id": counter,
+        "name": name,
+        "category": category,
+        "price": price,
+        "quantity": quantity,
+    }
+    sweets_db.append(sweet)
+    counter += 1
+    return sweet
+
 
 # Get all sweets
-@router.get("/")
-def get_sweets(db: Session = Depends(get_db)):
-    return db.query(models.Sweet).all()
+@router.get("/sweets")
+def get_sweets():
+    return sweets_db
 
-# Add a new sweet (admin only)
-@router.post("/")
-def add_sweet(name: str, price: float, stock: int, db: Session = Depends(get_db), user=Depends(auth.get_current_admin)):
-    sweet = models.Sweet(name=name, price=price, stock=stock)
-    db.add(sweet)
-    db.commit()
-    db.refresh(sweet)
-    return sweet
 
-# Update a sweet (admin only)
-@router.put("/{sweet_id}")
-def update_sweet(sweet_id: int, name: str, price: float, stock: int, db: Session = Depends(get_db), user=Depends(auth.get_current_admin)):
-    sweet = db.query(models.Sweet).get(sweet_id)
-    if not sweet:
-        raise HTTPException(404, "Sweet not found")
-    sweet.name, sweet.price, sweet.stock = name, price, stock
-    db.commit()
-    return sweet
+# Update sweet
+@router.put("/sweets/{sweet_id}")
+def update_sweet(sweet_id: int, name: str = None, category: str = None, price: int = None, quantity: int = None):
+    for sweet in sweets_db:
+        if sweet["id"] == sweet_id:
+            if name:
+                sweet["name"] = name
+            if category:
+                sweet["category"] = category
+            if price:
+                sweet["price"] = price
+            if quantity:
+                sweet["quantity"] = quantity
+            return sweet
+    raise HTTPException(status_code=404, detail="Sweet not found")
 
-# Delete a sweet (admin only)
-@router.delete("/{sweet_id}")
-def delete_sweet(sweet_id: int, db: Session = Depends(get_db), user=Depends(auth.get_current_admin)):
-    sweet = db.query(models.Sweet).get(sweet_id)
-    if not sweet:
-        raise HTTPException(404, "Sweet not found")
-    db.delete(sweet)
-    db.commit()
-    return {"message": "Sweet deleted"}
 
-# Purchase sweet (normal user)
-@router.post("/{sweet_id}/purchase")
-def purchase_sweet(sweet_id: int, quantity: int, db: Session = Depends(get_db), user=Depends(auth.get_current_user)):
-    sweet = db.query(models.Sweet).get(sweet_id)
-    if not sweet or sweet.stock < quantity:
-        raise HTTPException(400, "Not enough stock")
-    sweet.stock -= quantity
-    db.commit()
-    return {"message": f"Purchased {quantity} of {sweet.name}"}
+# Delete sweet
+@router.delete("/sweets/{sweet_id}")
+def delete_sweet(sweet_id: int):
+    for sweet in sweets_db:
+        if sweet["id"] == sweet_id:
+            sweets_db.remove(sweet)
+            return {"message": "Sweet deleted"}
+    raise HTTPException(status_code=404, detail="Sweet not found")
 
-# Restock sweet (admin only)
-@router.post("/{sweet_id}/restock")
-def restock_sweet(sweet_id: int, quantity: int, db: Session = Depends(get_db), user=Depends(auth.get_current_admin)):
-    sweet = db.query(models.Sweet).get(sweet_id)
-    if not sweet:
-        raise HTTPException(404, "Sweet not found")
-    sweet.stock += quantity
-    db.commit()
-    return {"message": f"Restocked {quantity} of {sweet.name}"}
+
+# Search sweets
+@router.get("/sweets/search")
+def search_sweets(name: str):
+    results = [sweet for sweet in sweets_db if name.lower() in sweet["name"].lower()]
+    return results

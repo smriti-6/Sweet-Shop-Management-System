@@ -1,5 +1,7 @@
 from fastapi import FastAPI
-from app.routes import auth
+from app.routes import sweets
 
 app = FastAPI()
-app.include_router(auth.router)
+
+# include router
+app.include_router(sweets.router)

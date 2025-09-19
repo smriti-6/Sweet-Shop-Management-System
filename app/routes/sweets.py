@@ -1,63 +1,61 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from app import models, schemas
+from app.database import get_db
 
-router = APIRouter()
+router = APIRouter(
+    prefix="/sweets",
+    tags=["sweets"]
+)
 
-# In-memory database (temporary for TDD)
-sweets_db = []
-counter = 1  # for unique IDs
+# Create Sweet
+@router.post("/", response_model=schemas.SweetResponse)
+def create_sweet(sweet: schemas.SweetCreate, db: Session = Depends(get_db)):
+    db_sweet = models.Sweet(**sweet.dict())
+    db.add(db_sweet)
+    db.commit()
+    db.refresh(db_sweet)
+    return db_sweet
 
 
-# Add sweet
-@router.post("/sweets")
-def add_sweet(name: str, category: str, price: int, quantity: int):
-    global counter
-    sweet = {
-        "id": counter,
-        "name": name,
-        "category": category,
-        "price": price,
-        "quantity": quantity,
-    }
-    sweets_db.append(sweet)
-    counter += 1
+# Get all Sweets
+@router.get("/", response_model=list[schemas.SweetResponse])
+def get_sweets(db: Session = Depends(get_db)):
+    sweets = db.query(models.Sweet).all()
+    return sweets
+
+
+# Get Sweet by ID
+@router.get("/{sweet_id}", response_model=schemas.SweetResponse)
+def get_sweet(sweet_id: int, db: Session = Depends(get_db)):
+    sweet = db.query(models.Sweet).filter(models.Sweet.id == sweet_id).first()
+    if not sweet:
+        raise HTTPException(status_code=404, detail="Sweet not found")
     return sweet
 
 
-# Get all sweets
-@router.get("/sweets")
-def get_sweets():
-    return sweets_db
+# Update Sweet
+@router.put("/{sweet_id}", response_model=schemas.SweetResponse)
+def update_sweet(sweet_id: int, sweet: schemas.SweetCreate, db: Session = Depends(get_db)):
+    db_sweet = db.query(models.Sweet).filter(models.Sweet.id == sweet_id).first()
+    if not db_sweet:
+        raise HTTPException(status_code=404, detail="Sweet not found")
+
+    for key, value in sweet.dict().items():
+        setattr(db_sweet, key, value)
+
+    db.commit()
+    db.refresh(db_sweet)
+    return db_sweet
 
 
-# Update sweet
-@router.put("/sweets/{sweet_id}")
-def update_sweet(sweet_id: int, name: str = None, category: str = None, price: int = None, quantity: int = None):
-    for sweet in sweets_db:
-        if sweet["id"] == sweet_id:
-            if name:
-                sweet["name"] = name
-            if category:
-                sweet["category"] = category
-            if price:
-                sweet["price"] = price
-            if quantity:
-                sweet["quantity"] = quantity
-            return sweet
-    raise HTTPException(status_code=404, detail="Sweet not found")
+# Delete Sweet
+@router.delete("/{sweet_id}")
+def delete_sweet(sweet_id: int, db: Session = Depends(get_db)):
+    db_sweet = db.query(models.Sweet).filter(models.Sweet.id == sweet_id).first()
+    if not db_sweet:
+        raise HTTPException(status_code=404, detail="Sweet not found")
 
-
-# Delete sweet
-@router.delete("/sweets/{sweet_id}")
-def delete_sweet(sweet_id: int):
-    for sweet in sweets_db:
-        if sweet["id"] == sweet_id:
-            sweets_db.remove(sweet)
-            return {"message": "Sweet deleted"}
-    raise HTTPException(status_code=404, detail="Sweet not found")
-
-
-# Search sweets
-@router.get("/sweets/search")
-def search_sweets(name: str):
-    results = [sweet for sweet in sweets_db if name.lower() in sweet["name"].lower()]
-    return results
+    db.delete(db_sweet)
+    db.commit()
+    return {"message": "Sweet deleted successfully"}
